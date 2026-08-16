@@ -276,13 +276,13 @@
       if(res.ok){
         const data = await res.json();
         notes = Array.isArray(data) ? data : [];
+        if(!notes.length){ seedDefaults(); await persist(); }
       } else {
+        // transient failure (e.g. rate limit) - do NOT wipe remote data, just retry via poll
         notes = [];
       }
-      if(!notes.length) { seedDefaults(); await persist(); }
     }catch(e){
-      seedDefaults();
-      await persist();
+      notes = [];
     }
     renderList();
   }
@@ -303,7 +303,25 @@
     return first.trim() ? first.trim() : '...';
   }
 
+  let listTouching = false;
+  let pendingRenderFilter = null;
+  listScroll.addEventListener('touchstart', ()=>{ listTouching = true; }, {passive:true});
+  listScroll.addEventListener('touchend', ()=>{
+    setTimeout(()=>{
+      listTouching = false;
+      if(pendingRenderFilter !== null){
+        renderListNow(pendingRenderFilter);
+        pendingRenderFilter = null;
+      }
+    }, 250);
+  }, {passive:true});
+
   function renderList(filter){
+    if(listTouching){ pendingRenderFilter = (filter||''); return; }
+    renderListNow(filter);
+  }
+
+  function renderListNow(filter){
     const q = (filter||'').trim().toLowerCase();
     const sorted = [...notes].sort((a,b)=>b.updatedAt-a.updatedAt);
     const visible = q ? sorted.filter(n => (n.title||'').toLowerCase().includes(q) || (n.content||'').toLowerCase().includes(q)) : sorted;
@@ -595,7 +613,7 @@
       }
     }catch(e){ /* ignore transient errors */ }
   }
-  setInterval(poll, 1800);
+  setInterval(poll, 2500);
 
   loadNotes();
   show('list');
